@@ -97,13 +97,13 @@ export function openFileWithEventKeys(
 ) {
     const { workspace } = app;
 
-    let leaf = workspace.activeLeaf;
+    let leaf = app.workspace.getMostRecentLeaf();
 
     const createNewPane = settings.createNewPaneMod === 'Shift' ? event.shiftKey : event.metaKey;
 
     // Shift key means we should be using a new leaf
     if (createNewPane) {
-        leaf = workspace.createLeafBySplit(workspace.activeLeaf);
+        leaf = workspace.createLeafBySplit(leaf);
         workspace.setActiveLeaf(leaf);
     }
 
