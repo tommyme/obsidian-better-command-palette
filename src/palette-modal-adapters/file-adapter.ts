@@ -38,6 +38,7 @@ export default class BetterCommandPaletteFileAdapter extends SuggestModalAdapter
 
         this.allItems = [];
 
+        // TODO: explain it.
         this.unresolvedItems = new OrderedSet<Match>();
 
         // Actually returns all files in the cache even if there are no unresolved links
@@ -87,6 +88,7 @@ export default class BetterCommandPaletteFileAdapter extends SuggestModalAdapter
             { command: generateHotKeyText({ modifiers: [createNewFileMod], key: 'ENTER' }, this.plugin.settings), purpose: 'Create file' },
             { command: generateHotKeyText({ modifiers: ['Mod'], key: this.plugin.settings.commandSearchHotkey }, this.plugin.settings), purpose: 'Search Commands' },
             { command: generateHotKeyText({ modifiers: ['Mod'], key: this.plugin.settings.tagSearchHotkey }, this.plugin.settings), purpose: 'Search Tags' },
+            { command: generateHotKeyText({ modifiers: ['Mod'], key: 'L' }, this.plugin.settings), purpose: 'replace first' },
         ];
     }
 
@@ -127,17 +129,30 @@ export default class BetterCommandPaletteFileAdapter extends SuggestModalAdapter
         });
     }
 
-    async onChooseSuggestion(match: Match, event: MouseEvent | KeyboardEvent) {
+    getPathFromSelection(match: Match, event: MouseEvent | KeyboardEvent) {
         let path = match && match.id;
 
         // No match means we are trying to create new file
         if (!match) {
+            // get Input element.
             const el = event.target as HTMLInputElement;
             path = el.value.replace(this.fileSearchPrefix, '');
         } else if (path.includes(':')) {
             // If the path is an aliase, remove the alias prefix
             [, path] = path.split(':');
         }
+        return path;
+    }
+
+    // 将输入框的值替换成 当前选中项的路径, 以便更方便地创建文件
+    pasteSelected(match: Match, event: MouseEvent | KeyboardEvent) {
+        const path = this.getPathFromSelection(match, event);
+        const el = event.target as HTMLInputElement;
+        el.value = `/${path}`;
+    }
+
+    async onChooseSuggestion(match: Match, event: MouseEvent | KeyboardEvent) {
+        const path = this.getPathFromSelection(match, event);
 
         const file = await getOrCreateFile(this.app, path);
 

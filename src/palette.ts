@@ -139,6 +139,7 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
 
         const { createNewPaneMod, createNewFileMod } = plugin.settings;
 
+        // 注册键盘事件
         this.scope.register([], 'Backspace', (event: KeyboardEvent) => {
             closeModal(event);
         });
@@ -169,6 +170,15 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
         });
 
         this.scope.register(['Mod'], 'I', this.toggleHiddenItems);
+
+        this.scope.register(['Mod'], 'L', (event: KeyboardEvent) => {
+            if (this.actionType === ActionType.Files && this.currentSuggestions.length) {
+                // 这里由于api限制, 只能更改为第一项建议的路径值, 也就是说目前没有方法得到is-selected的元素
+                // 又不是不能用...
+                (this.currentAdapter as BetterCommandPaletteFileAdapter)!
+                    .pasteSelected(this.currentSuggestions[0], event);
+            }
+        });
     }
 
     toggleHiddenItems = () => {
