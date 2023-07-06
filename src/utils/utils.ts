@@ -95,17 +95,19 @@ export function openFileWithEventKeys(
     file: TFile,
     event: MouseEvent | KeyboardEvent,
 ) {
-    const { workspace } = app;
+    // const { workspace } = app;
 
-    let leaf = app.workspace.getMostRecentLeaf();
+    // let leaf = app.workspace.getMostRecentLeaf();
 
-    const createNewPane = settings.createNewPaneMod === 'Shift' ? event.shiftKey : event.metaKey;
+    const createNewTab = settings.createNewPaneMod === 'Shift' ? event.shiftKey : event.metaKey;
 
     // Shift key means we should be using a new leaf
-    if (createNewPane) {
-        leaf = workspace.createLeafBySplit(leaf);
-        workspace.setActiveLeaf(leaf);
+    if (createNewTab) {
+        (app as any).commands.executeCommandById('workspace:new-tab');
+        // leaf = workspace.createLeafBySplit(leaf);
+        // workspace.setActiveLeaf(leaf);
     }
+    const leaf = app.workspace.activeLeaf;
 
     leaf.openFile(file);
 }

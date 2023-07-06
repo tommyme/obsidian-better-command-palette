@@ -65,3 +65,8 @@ This builds the plugin in production mode and copies the needed files to the roo
 Run `npm run build`
 
 Builds the plugin for production and puts all neccessary files into the `dist` directory. Pretty much only used by github actions for releases.
+
+### 插件开发心得
+
+很多api官方没有放出来, 需要我们自己寻找
+可以在控制台把大对象打印出来, 找到你需要的属性或者方法进行使用

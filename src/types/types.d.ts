@@ -38,7 +38,8 @@ export interface Match extends Comparable {
 
 export interface UnsafeSuggestModalInterface extends SuggestModal<Match> {
     chooser: {
-        useSelectedItem(ev: Partial<KeyboardEvent>): void;
+        // useSelectedItem(ev: Partial<KeyboardEvent>): void;
+        selectedItem: number;
     }
     updateSuggestions(): void;
 }

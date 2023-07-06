@@ -164,7 +164,8 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
 
         this.scope.register([createNewPaneMod], 'Enter', (event: KeyboardEvent) => {
             if (this.actionType === ActionType.Files && this.currentSuggestions.length) {
-                this.currentAdapter.onChooseSuggestion(this.currentSuggestions[0], event);
+                this.currentAdapter
+                    .onChooseSuggestion(this.currentSuggestions[this.chooser.selectedItem], event);
                 this.close(event);
             }
         });
@@ -176,7 +177,7 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
                 // 这里由于api限制, 只能更改为第一项建议的路径值, 也就是说目前没有方法得到is-selected的元素
                 // 又不是不能用...
                 (this.currentAdapter as BetterCommandPaletteFileAdapter)!
-                    .pasteSelected(this.currentSuggestions[0], event);
+                    .pasteSelected(this.currentSuggestions[this.chooser.selectedItem], event);
             }
         });
     }
