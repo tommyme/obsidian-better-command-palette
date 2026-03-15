@@ -23,7 +23,10 @@ export interface BetterCommandPalettePluginSettings {
     hiddenCommands: string[],
     hiddenFiles: string[],
     hiddenTags: string[],
+    hiddenNotes: string[],
     fileTypeExclusion: string[],
+    noteSearchPrefix: string,
+    noteSearchHotkey: string,
 }
 
 export const DEFAULT_SETTINGS: BetterCommandPalettePluginSettings = {
@@ -44,7 +47,10 @@ export const DEFAULT_SETTINGS: BetterCommandPalettePluginSettings = {
     hiddenCommands: [],
     hiddenFiles: [],
     hiddenTags: [],
+    hiddenNotes: [],
     fileTypeExclusion: [],
+    noteSearchPrefix: '?',
+    noteSearchHotkey: 'n',
 };
 
 export class BetterCommandPaletteSettingTab extends PluginSettingTab {
@@ -157,6 +163,22 @@ export class BetterCommandPaletteSettingTab extends PluginSettingTab {
             .setDesc('The hotkey used to switch to tag search while using the command palette.')
             .addText((t) => t.setValue(settings.tagSearchHotkey).onChange(async (val) => {
                 settings.tagSearchHotkey = val;
+                await this.plugin.saveSettings();
+            }));
+
+        new Setting(containerEl)
+            .setName('Note Search Prefix (OmniSearch)')
+            .setDesc('The prefix used to trigger full-text note search via OmniSearch. Requires OmniSearch plugin to be installed.')
+            .addText((t) => t.setValue(settings.noteSearchPrefix).onChange(async (val) => {
+                settings.noteSearchPrefix = val;
+                await this.plugin.saveSettings();
+            }));
+
+        new Setting(containerEl)
+            .setName('Note Search Hotkey')
+            .setDesc('The hotkey used to switch to note search (OmniSearch) while using the command palette.')
+            .addText((t) => t.setValue(settings.noteSearchHotkey).onChange(async (val) => {
+                settings.noteSearchHotkey = val;
                 await this.plugin.saveSettings();
             }));
 

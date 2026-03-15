@@ -79,6 +79,22 @@ export default class BetterCommandPalettePlugin extends Plugin {
             },
         });
 
+        this.addCommand({
+            id: 'open-better-commmand-palette-omnisearch',
+            name: 'Open better command palette: Omnisearch',
+            hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'f' }],
+            callback: () => {
+                new BetterCommandPaletteModal(
+                    this.app,
+                    this.prevCommands,
+                    this.prevTags,
+                    this,
+                    this.suggestionsWorker,
+                    this.settings.noteSearchPrefix,
+                ).open();
+            },
+        });
+
         this.addSettingTab(new BetterCommandPaletteSettingTab(this.app, this));
     }
 

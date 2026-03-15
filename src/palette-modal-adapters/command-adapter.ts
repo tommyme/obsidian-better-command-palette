@@ -52,6 +52,7 @@ export default class BetterCommandPaletteCommandAdapter extends SuggestModalAdap
         this.keymapHandlers = [
             this.palette.scope.register(['Mod'], this.plugin.settings.fileSearchHotkey, () => this.palette.changeActionType(ActionType.Files)),
             this.palette.scope.register(['Mod'], this.plugin.settings.tagSearchHotkey, () => this.palette.changeActionType(ActionType.Tags)),
+            this.palette.scope.register(['Mod'], this.plugin.settings.noteSearchHotkey, () => this.palette.changeActionType(ActionType.NoteSearch)),
         ];
     }
 

@@ -75,3 +75,23 @@ type Message = {
         items: Match[],
     }
 };
+
+// OmniSearch plugin public API (window.omnisearch)
+interface OmniSearchResult {
+    score: number,
+    vault: string,
+    path: string,
+    basename: string,
+    foundWords: string[],
+    excerpt: string,
+}
+
+declare global {
+    interface Window {
+        omnisearch?: {
+            search(q: string): Promise<OmniSearchResult[]>;
+            registerOnIndexed(cb: () => void): void;
+            unregisterOnIndexed(cb: () => void): void;
+        }
+    }
+}

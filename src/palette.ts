@@ -8,6 +8,7 @@ import {
     BetterCommandPaletteCommandAdapter,
     BetterCommandPaletteFileAdapter,
     BetterCommandPaletteTagAdapter,
+    BetterCommandPaletteNoteSearchAdapter,
 } from 'src/palette-modal-adapters';
 import BetterCommandPalettePlugin from 'src/main';
 import { ActionType } from './utils/constants';
@@ -46,7 +47,11 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
 
     tagAdapter: BetterCommandPaletteTagAdapter;
 
+    noteAdapter: BetterCommandPaletteNoteSearchAdapter;
+
     currentAdapter: SuggestModalAdapter;
+
+    noteSearchPrefix: string;
 
     suggestionLimit: number;
 
@@ -63,6 +68,7 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
         // General instance variables
         this.fileSearchPrefix = plugin.settings.fileSearchPrefix;
         this.tagSearchPrefix = plugin.settings.tagSearchPrefix;
+        this.noteSearchPrefix = plugin.settings.noteSearchPrefix;
         this.suggestionLimit = plugin.settings.suggestionLimit;
         this.initialInputValue = initialInputValue;
 
@@ -92,10 +98,16 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
             plugin,
             this,
         );
+        this.noteAdapter = new BetterCommandPaletteNoteSearchAdapter(
+            app,
+            new OrderedSet<Match>(),
+            plugin,
+            this,
+        );
 
         // Lets us do the suggestion fuzzy search in a different thread
         this.suggestionsWorker = suggestionsWorker;
-        this.suggestionsWorker.onmessage = (msg: MessageEvent) => this.receivedSuggestions(msg);
+        this.suggestionsWorker.onmessage = (msg: MessageEvent) => { this.receivedSuggestions(msg.data); };
 
         // Add our custom title element
         this.modalTitleEl = createEl('p', {
@@ -205,6 +217,8 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
             prefix = this.plugin.settings.fileSearchPrefix;
         } else if (actionType === ActionType.Tags) {
             prefix = this.plugin.settings.tagSearchPrefix;
+        } else if (actionType === ActionType.NoteSearch) {
+            prefix = this.plugin.settings.noteSearchPrefix;
         }
         const currentQuery: string = this.inputEl.value;
         const cleanQuery = this.currentAdapter.cleanQuery(currentQuery);
@@ -237,6 +251,9 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
         } else if (text.startsWith(this.tagSearchPrefix)) {
             type = ActionType.Tags;
             nextAdapter = this.tagAdapter;
+        } else if (text.startsWith(this.noteSearchPrefix)) {
+            type = ActionType.NoteSearch;
+            nextAdapter = this.noteAdapter;
         } else {
             type = ActionType.Commands;
             nextAdapter = this.commandAdapter;
@@ -296,18 +313,18 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
         return this.currentAdapter.getSortedItems();
     }
 
-    receivedSuggestions(msg : MessageEvent) {
+    receivedSuggestions(data: Match[]) {
         const results = [];
         let hiddenCount = 0;
 
         for (
             let i = 0;
-            i < msg.data.length && results.length < this.suggestionLimit + hiddenCount;
+            i < data.length && results.length < this.suggestionLimit + hiddenCount;
             i += 1
         ) {
-            results.push(msg.data[i]);
+            results.push(data[i]);
 
-            if (this.currentAdapter.hiddenIds.includes(msg.data[i].id)) {
+            if (this.currentAdapter.hiddenIds.includes(data[i].id)) {
                 hiddenCount += 1;
             }
         }
@@ -323,7 +340,17 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
         this.updateSuggestions();
     }
 
-    getSuggestionsAsync(query: string) {
+    async getSuggestionsAsync(query: string) {
+        // If the current adapter implements its own async search (e.g. NoteSearchAdapter
+        // which calls OmniSearch directly), use that instead of the Web Worker.
+        if ('searchAsync' in this.currentAdapter) {
+            const results = await (this.currentAdapter as BetterCommandPaletteNoteSearchAdapter)
+                .searchAsync(query);
+            this.receivedSuggestions(results);
+            return;
+        }
+
+        // Default path: delegate fuzzy search to the Web Worker.
         const items = this.getItems();
         this.suggestionsWorker.postMessage({
             query,
