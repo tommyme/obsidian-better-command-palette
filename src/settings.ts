@@ -27,6 +27,10 @@ export interface BetterCommandPalettePluginSettings {
     fileTypeExclusion: string[],
     noteSearchPrefix: string,
     noteSearchHotkey: string,
+    promptTemplatesFolder: string,
+    promptTemplateSearchPrefix: string,
+    promptTemplateSearchHotkey: string,
+    hiddenPromptTemplates: string[],
 }
 
 export const DEFAULT_SETTINGS: BetterCommandPalettePluginSettings = {
@@ -51,6 +55,10 @@ export const DEFAULT_SETTINGS: BetterCommandPalettePluginSettings = {
     fileTypeExclusion: [],
     noteSearchPrefix: '?',
     noteSearchHotkey: 'n',
+    promptTemplatesFolder: '',
+    promptTemplateSearchPrefix: '>',
+    promptTemplateSearchHotkey: 'u',
+    hiddenPromptTemplates: [],
 };
 
 export class BetterCommandPaletteSettingTab extends PluginSettingTab {
@@ -211,6 +219,39 @@ export class BetterCommandPaletteSettingTab extends PluginSettingTab {
             }).setValue(settings.hotkeyStyle)
                 .onChange(async (v) => {
                     settings.hotkeyStyle = v as HotkeyStyleType;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Prompt Templates Folder')
+            .setDesc('Vault-relative folder containing .md prompt template files (e.g. "Claude Prompts").')
+            .addText((t) => t
+                .setPlaceholder('Claude Prompts')
+                .setValue(settings.promptTemplatesFolder)
+                .onChange(async (val) => {
+                    settings.promptTemplatesFolder = val.trim();
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Prompt Template Search Prefix')
+            .setDesc('The prefix used to trigger prompt template mode (default: >).')
+            .addText((t) => t
+                .setPlaceholder('>')
+                .setValue(settings.promptTemplateSearchPrefix)
+                .onChange(async (val) => {
+                    settings.promptTemplateSearchPrefix = val.trim() || '>';
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Prompt Template Search Hotkey')
+            .setDesc('The hotkey used to switch to prompt template mode while using the command palette.')
+            .addText((t) => t
+                .setPlaceholder('u')
+                .setValue(settings.promptTemplateSearchHotkey)
+                .onChange(async (val) => {
+                    settings.promptTemplateSearchHotkey = val.trim() || 'u';
                     await this.plugin.saveSettings();
                 }));
 

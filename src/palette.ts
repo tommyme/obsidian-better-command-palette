@@ -9,6 +9,7 @@ import {
     BetterCommandPaletteFileAdapter,
     BetterCommandPaletteTagAdapter,
     BetterCommandPaletteNoteSearchAdapter,
+    BetterCommandPalettePromptTemplateAdapter,
 } from 'src/palette-modal-adapters';
 import BetterCommandPalettePlugin from 'src/main';
 import { ActionType } from './utils/constants';
@@ -49,11 +50,23 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
 
     noteAdapter: BetterCommandPaletteNoteSearchAdapter;
 
+    promptTemplateAdapter: BetterCommandPalettePromptTemplateAdapter;
+
     currentAdapter: SuggestModalAdapter;
 
     noteSearchPrefix: string;
 
+    promptTemplateSearchPrefix: string;
+
     suggestionLimit: number;
+
+    adapterVersion: number;
+
+    onChooseFileCallback: ((item: Match, evt: MouseEvent | KeyboardEvent) => void) | null = null;
+
+    setFileChooseCallback(callback: (item: Match, evt: MouseEvent | KeyboardEvent) => void) {
+        this.onChooseFileCallback = callback;
+    }
 
     constructor(
         app: App,
@@ -69,6 +82,7 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
         this.fileSearchPrefix = plugin.settings.fileSearchPrefix;
         this.tagSearchPrefix = plugin.settings.tagSearchPrefix;
         this.noteSearchPrefix = plugin.settings.noteSearchPrefix;
+        this.promptTemplateSearchPrefix = plugin.settings.promptTemplateSearchPrefix;
         this.suggestionLimit = plugin.settings.suggestionLimit;
         this.initialInputValue = initialInputValue;
 
@@ -104,15 +118,31 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
             plugin,
             this,
         );
+        this.promptTemplateAdapter = new BetterCommandPalettePromptTemplateAdapter(
+            app,
+            new OrderedSet<Match>(),
+            plugin,
+            this,
+        );
 
         // Lets us do the suggestion fuzzy search in a different thread
         this.suggestionsWorker = suggestionsWorker;
-        this.suggestionsWorker.onmessage = (msg: MessageEvent) => { this.receivedSuggestions(msg.data); };
+        this.suggestionsWorker.onmessage = (msg: MessageEvent) => {
+            // Discard stale Worker results if the current adapter handles its own search
+            if (!('searchAsync' in this.currentAdapter)) {
+                this.receivedSuggestions(msg.data);
+            }
+        };
 
         // Add our custom title element
         this.modalTitleEl = createEl('p', {
             cls: 'better-command-palette-title',
         });
+
+        // Pre-set input so updateActionType picks the right adapter from the start
+        if (this.initialInputValue) {
+            this.inputEl.value = this.initialInputValue;
+        }
 
         // Update our action type before adding in our title element so the text is correct
         this.updateActionType();
@@ -175,7 +205,9 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
         });
 
         this.scope.register([createNewPaneMod], 'Enter', (event: KeyboardEvent) => {
-            if (this.actionType === ActionType.Files && this.currentSuggestions.length) {
+            const supportsNewTab = this.actionType === ActionType.Files
+                || this.actionType === ActionType.NoteSearch;
+            if (supportsNewTab && this.currentSuggestions.length) {
                 this.currentAdapter
                     .onChooseSuggestion(this.currentSuggestions[this.chooser.selectedItem], event);
                 this.close(event);
@@ -219,6 +251,8 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
             prefix = this.plugin.settings.tagSearchPrefix;
         } else if (actionType === ActionType.NoteSearch) {
             prefix = this.plugin.settings.noteSearchPrefix;
+        } else if (actionType === ActionType.PromptTemplates) {
+            prefix = this.plugin.settings.promptTemplateSearchPrefix;
         }
         const currentQuery: string = this.inputEl.value;
         const cleanQuery = this.currentAdapter.cleanQuery(currentQuery);
@@ -254,6 +288,9 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
         } else if (text.startsWith(this.noteSearchPrefix)) {
             type = ActionType.NoteSearch;
             nextAdapter = this.noteAdapter;
+        } else if (text.startsWith(this.promptTemplateSearchPrefix)) {
+            type = ActionType.PromptTemplates;
+            nextAdapter = this.promptTemplateAdapter;
         } else {
             type = ActionType.Commands;
             nextAdapter = this.commandAdapter;
@@ -263,6 +300,7 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
             this.currentAdapter?.unmount();
             this.currentAdapter = nextAdapter;
             this.currentAdapter.mount();
+            this.adapterVersion = (this.adapterVersion || 0) + 1;
         }
 
         if (!this.currentAdapter.initialized) {
@@ -344,9 +382,13 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
         // If the current adapter implements its own async search (e.g. NoteSearchAdapter
         // which calls OmniSearch directly), use that instead of the Web Worker.
         if ('searchAsync' in this.currentAdapter) {
+            const version = this.adapterVersion;
             const results = await (this.currentAdapter as BetterCommandPaletteNoteSearchAdapter)
                 .searchAsync(query);
-            this.receivedSuggestions(results);
+            // Discard stale results if the adapter changed while we were awaiting
+            if (this.adapterVersion === version) {
+                this.receivedSuggestions(results);
+            }
             return;
         }
 
@@ -426,6 +468,11 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
     }
 
     async onChooseSuggestion(item: Match, event: MouseEvent | KeyboardEvent) {
+        if (this.onChooseFileCallback && this.actionType === ActionType.Files) {
+            this.onChooseFileCallback(item, event);
+            this.close();
+            return;
+        }
         this.currentAdapter.onChooseSuggestion(item, event);
     }
 }

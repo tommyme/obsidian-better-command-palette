@@ -27,7 +27,7 @@ export default abstract class SuggestModalAdapter {
 
     hiddenIds: string[];
 
-    hiddenIdsSettingsKey: 'hiddenCommands' | 'hiddenFiles' | 'hiddenTags' | 'hiddenNotes';
+    hiddenIdsSettingsKey: 'hiddenCommands' | 'hiddenFiles' | 'hiddenTags' | 'hiddenNotes' | 'hiddenPromptTemplates';
 
     keymapHandlers: KeymapEventHandler[];
 

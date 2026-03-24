@@ -8,20 +8,24 @@ import { Match } from 'src/types/types';
 import { ActionType } from 'src/utils/constants';
 
 /**
- * Adapter for full-text note search via the OmniSearch plugin.
+ * Adapter for full-text note search.
  * Triggered by the noteSearchPrefix (default: '?').
  *
- * - Empty query ('?'): shows recently opened files (same as FileAdapter behaviour)
- * - Query with text ('?obsidian'): calls window.omnisearch.search() which uses
- *   BM25 scoring, fuzzy matching, field weighting, and recency boost.
+ * Two search engines, toggled with Mod+F:
+ *  - OmniSearch (default): BM25 via window.omnisearch.search()
+ *  - Built-in:             scans all vault markdown files for text matches
  *
- * OmniSearch is an optional dependency. If it is not installed the adapter
- * shows an explanatory empty-state message and does not throw.
+ * Result tags layout: tags[0] = excerpt text, tags[1..] = words to highlight.
+ *
+ * - Empty query ('?'): shows recently opened files
+ * - Query with text:   delegates to the active engine
  */
 export default class BetterCommandPaletteNoteSearchAdapter extends SuggestModalAdapter {
     titleText: string;
 
     emptyStateText: string;
+
+    private useNativeSearch = false;
 
     initialize() {
         super.initialize();
@@ -29,23 +33,30 @@ export default class BetterCommandPaletteNoteSearchAdapter extends SuggestModalA
         this.titleText = 'Better Command Palette: Note Search';
         this.emptyStateText = window.omnisearch
             ? 'No matching notes found.'
-            : 'OmniSearch plugin is not installed or not yet indexed.';
+            : 'OmniSearch not installed — press ⌘F to use built-in search.';
 
         this.hiddenIds = this.plugin.settings.hiddenNotes;
         this.hiddenIdsSettingsKey = 'hiddenNotes';
 
-        // No static allItems — search results are fetched dynamically via OmniSearch.
-        // prevItems (recently opened files) are used when the query is empty.
         this.allItems = [];
 
-        // Mirror FileAdapter: use Obsidian's last-open-files list as "recent" items.
         [...this.app.workspace.getLastOpenFiles()].reverse().forEach((filePath) => {
             this.prevItems.add(new PaletteMatch(filePath, this.fileBasename(filePath)));
         });
     }
 
+    getTitleText(): string {
+        return `Better Command Palette: Note Search (${this.useNativeSearch ? 'Built-in' : 'OmniSearch'})`;
+    }
+
+    getEmptyStateText(): string {
+        if (this.useNativeSearch) return 'No matching notes found.';
+        return window.omnisearch
+            ? 'No matching notes found.'
+            : 'OmniSearch not installed — press ⌘F to switch to built-in search.';
+    }
+
     mount(): void {
-        // Register hotkeys that switch away from this mode to others.
         this.keymapHandlers = [
             this.palette.scope.register(
                 ['Mod'],
@@ -62,12 +73,22 @@ export default class BetterCommandPaletteNoteSearchAdapter extends SuggestModalA
                 this.plugin.settings.tagSearchHotkey,
                 () => this.palette.changeActionType(ActionType.Tags),
             ),
+            this.palette.scope.register(['Mod'], 'F', () => {
+                this.useNativeSearch = !this.useNativeSearch;
+                // Reset lastQuery so getSuggestions fires a fresh async search
+                this.palette.lastQuery = '';
+                this.palette.updateTitleText();
+                this.palette.updateEmptyStateText();
+                this.palette.updateSuggestions();
+            }),
         ];
     }
 
     getInstructions(): Instruction[] {
         return [
             { command: generateHotKeyText({ modifiers: [], key: 'ENTER' }, this.plugin.settings), purpose: 'Open note' },
+            { command: generateHotKeyText({ modifiers: [this.plugin.settings.createNewPaneMod], key: 'ENTER' }, this.plugin.settings), purpose: 'Open in new tab' },
+            { command: generateHotKeyText({ modifiers: ['Mod'], key: 'F' }, this.plugin.settings), purpose: 'Toggle OmniSearch / Built-in' },
             { command: generateHotKeyText({ modifiers: ['Mod'], key: this.plugin.settings.commandSearchHotkey }, this.plugin.settings), purpose: 'Search Commands' },
             { command: generateHotKeyText({ modifiers: ['Mod'], key: this.plugin.settings.fileSearchHotkey }, this.plugin.settings), purpose: 'Search Files' },
             { command: generateHotKeyText({ modifiers: ['Mod'], key: this.plugin.settings.tagSearchHotkey }, this.plugin.settings), purpose: 'Search Tags' },
@@ -78,60 +99,135 @@ export default class BetterCommandPaletteNoteSearchAdapter extends SuggestModalA
         return query.replace(this.plugin.settings.noteSearchPrefix, '').trim();
     }
 
-    /**
-     * Custom async search that bypasses the BCP Web Worker.
-     * Called by palette.ts instead of posting to the Worker when this adapter is active.
-     *
-     * - Empty query → return recently opened files (getSortedItems from prevItems)
-     * - Non-empty query → delegate to window.omnisearch.search()
-     */
     async searchAsync(query: string): Promise<Match[]> {
-        if (!query) {
-            // Show recent files when no search term is entered
-            return this.getSortedItems();
-        }
+        if (!query) return this.getSortedItems();
 
-        if (!window.omnisearch) {
-            return [];
-        }
+        if (this.useNativeSearch) return this.nativeFileSearch(query);
+
+        if (!window.omnisearch) return [];
 
         try {
             const results = await window.omnisearch.search(query);
-            // Store the excerpt in tags[0] so renderSuggestion can display it.
-            // (tags[] is not used for Worker-side filtering here since we bypass the Worker.)
-            return results.map((r) => new PaletteMatch(r.path, r.basename, [r.excerpt]));
+            // tags[0] = excerpt, tags[1..] = foundWords for highlighting
+            return results.map(
+                (r) => new PaletteMatch(r.path, r.basename, [r.excerpt, ...r.foundWords]),
+            );
         } catch {
             return [];
         }
     }
 
     renderSuggestion(match: Match, content: HTMLElement): void {
-        content.createEl('div', {
-            cls: 'suggestion-title',
-            text: match.text,
-        });
+        // tags[0] = excerpt, tags[1..] = words to highlight
+        const excerpt = match.tags[0];
+        const words = match.tags.slice(1);
 
-        // tags[0] holds the excerpt text (set in searchAsync)
-        if (match.tags[0]) {
-            content.createEl('div', {
-                cls: 'suggestion-note',
-                text: match.tags[0],
-            });
+        const titleEl = content.createEl('div', { cls: 'suggestion-title' });
+        if (words.length) {
+            titleEl.innerHTML = this.highlightText(match.text, words);
+        } else {
+            titleEl.setText(match.text);
+        }
+
+        if (excerpt) {
+            const excerptEl = content.createEl('div', { cls: 'suggestion-note' });
+            if (words.length) {
+                excerptEl.innerHTML = this.highlightText(excerpt, words);
+            } else {
+                excerptEl.setText(excerpt);
+            }
         }
     }
 
-    async onChooseSuggestion(match: Match): Promise<void> {
+    async onChooseSuggestion(match: Match, event: MouseEvent | KeyboardEvent): Promise<void> {
         if (!match) return;
 
         this.getPrevItems().add(match);
 
         const file = this.app.vault.getAbstractFileByPath(match.id);
-        if (file instanceof TFile) {
-            await this.app.workspace.getLeaf().openFile(file);
+        if (!(file instanceof TFile)) return;
+
+        // tags[1] is the first foundWord from OmniSearch (or first query token from native search)
+        const searchWord = match.tags[1];
+        let targetLine: number | undefined;
+
+        if (searchWord) {
+            try {
+                const content = await this.app.vault.cachedRead(file);
+                const idx = content.toLowerCase().indexOf(searchWord.toLowerCase());
+                if (idx !== -1) {
+                    targetLine = content.substring(0, idx).split('\n').length - 1;
+                }
+            } catch {
+                // ignore — fall back to opening at top
+            }
         }
+
+        const createNewTab = this.plugin.settings.createNewPaneMod === 'Shift'
+            ? event.shiftKey
+            : event.metaKey;
+        if (createNewTab) {
+            (this.app as any).commands.executeCommandById('workspace:new-tab');
+        }
+
+        const openState = targetLine !== undefined ? { eState: { line: targetLine } } : {};
+        this.app.workspace.activeLeaf.openFile(file, openState);
     }
 
-    // ── helpers ──────────────────────────────────────────────────────────────
+    // ── private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Simple full-text scan over all vault markdown files.
+     * tags[0] = excerpt, tags[1..] = query tokens for highlighting.
+     */
+    private async nativeFileSearch(query: string): Promise<Match[]> {
+        const files = this.app.vault.getMarkdownFiles();
+        const lowerQuery = query.toLowerCase();
+        const queryWords = query.split(/\s+/).filter(Boolean);
+
+        const settled = await Promise.all(
+            files.map(async (file) => {
+                try {
+                    const content = await this.app.vault.cachedRead(file);
+                    const lowerContent = content.toLowerCase();
+                    const idx = lowerContent.indexOf(lowerQuery);
+                    if (idx === -1) return null;
+
+                    const start = Math.max(0, idx - 60);
+                    const end = Math.min(content.length, idx + query.length + 60);
+                    const excerpt = `...${content.substring(start, end).replace(/\n/g, ' ')}...`;
+
+                    return new PaletteMatch(file.path, file.basename, [excerpt, ...queryWords]);
+                } catch {
+                    return null;
+                }
+            }),
+        );
+
+        return settled.filter((r): r is PaletteMatch => r !== null);
+    }
+
+    /**
+     * Wraps occurrences of `words` inside `text` with <span class="suggestion-highlight">.
+     * HTML-escapes the text first to prevent injection.
+     */
+    private highlightText(text: string, words: string[]): string {
+        const safe = text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        if (!words.length) return safe;
+
+        const pattern = words
+            .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+            .join('|');
+
+        return safe.replace(
+            new RegExp(`(${pattern})`, 'giu'),
+            '<span class="suggestion-highlight">$1</span>',
+        );
+    }
 
     private fileBasename(path: string): string {
         const name = path.split('/').pop() ?? path;

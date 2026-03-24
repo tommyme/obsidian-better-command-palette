@@ -6,6 +6,8 @@
 	"type": "module",
 	"scripts": {
 		"dev": "rollup --config rollup.config.js -w",
+		"compile": "rollup --config rollup.config.js",
+		"test": "cp test-vault/.obsidian/plugins/obsidian-better-command-palette/* ~/repos/content/.obsidian/plugins/obsidian-better-command-palette/ && obsidian reload",
 		"build": "NODE_ENV=production rollup --config rollup.config.js",
 		"build-beta": "NODE_ENV=production rollup --config rollup.config.js",
 		"build-local": "NODE_ENV=production DEST=local rollup --config rollup.config.js",

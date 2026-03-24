@@ -6,6 +6,7 @@ import BetterCommandPaletteModal from 'src/palette';
 import { Match, UnsafeAppInterface } from 'src/types/types';
 import { BetterCommandPalettePluginSettings, BetterCommandPaletteSettingTab, DEFAULT_SETTINGS } from 'src/settings';
 import { MACRO_COMMAND_ID_PREFIX } from './utils/constants';
+import FloatingHelpPanel from './utils/floating-help-panel';
 import './styles.scss';
 
 export default class BetterCommandPalettePlugin extends Plugin {
@@ -96,6 +97,15 @@ export default class BetterCommandPalettePlugin extends Plugin {
         });
 
         this.addSettingTab(new BetterCommandPaletteSettingTab(this.app, this));
+
+        this.addCommand({
+            id: 'show-better-command-palette-help',
+            name: 'Show Better Command Palette Help',
+            hotkeys: [],
+            callback: () => {
+                new FloatingHelpPanel().open();
+            },
+        });
     }
 
     onunload(): void {

@@ -39,4 +39,5 @@ export enum ActionType {
     Files,
     Tags,
     NoteSearch,
+    PromptTemplates,
 }
