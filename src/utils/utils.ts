@@ -1,6 +1,6 @@
 import {
     App, Command, Hotkey, Modifier, normalizePath, parseFrontMatterAliases,
-    parseFrontMatterTags, Platform, TFile,
+    parseFrontMatterTags, Platform, TFile, WorkspaceLeaf,
 } from 'obsidian';
 import { BetterCommandPalettePluginSettings } from 'src/settings';
 import { Match, UnsafeMetadataCacheInterface } from 'src/types/types';
@@ -89,15 +89,89 @@ export async function getOrCreateFile(app: App, path: string) : Promise < TFile 
     return file;
 }
 
+/**
+ * Gets all leaves from workspace via splits.
+ */
+function getAllLeaves(app: App): WorkspaceLeaf[] {
+    const ws = app.workspace as any;
+    const leaves: WorkspaceLeaf[] = [];
+    const visited = new Set();
+
+    const collectLeaves = (node: any) => {
+        if (!node || visited.has(node)) return;
+        visited.add(node);
+        if (typeof node.openFile === 'function') {
+            leaves.push(node);
+        }
+        if (node.children) {
+            node.children.forEach(collectLeaves);
+        }
+        if (node.leaves) {
+            node.leaves.forEach(collectLeaves);
+        }
+    };
+
+    if (ws.rootSplit) collectLeaves(ws.rootSplit);
+    if (ws.leftSplit) collectLeaves(ws.leftSplit);
+    if (ws.rightSplit) collectLeaves(ws.rightSplit);
+    if (ws.floatingSplit) collectLeaves(ws.floatingSplit);
+
+    return leaves;
+}
+
+/**
+ * Check if a leaf is in the left or right sidebar split.
+ */
+function isLeafInSidebarSplit(app: App, leaf: WorkspaceLeaf): boolean {
+    const ws = app.workspace as any;
+    const leafId = (leaf as any).id;
+
+    const isInSplit = (split: any): boolean => {
+        if (!split) return false;
+        const visited = new Set();
+        const check = (node: any): boolean => {
+            if (!node || visited.has(node)) return false;
+            visited.add(node);
+            if ((node as any).id === leafId) return true;
+            if (node.children) {
+                return node.children.some(check);
+            }
+            if (node.leaves) {
+                return node.leaves.some(check);
+            }
+            return false;
+        };
+        return check(split);
+    };
+
+    return isInSplit(ws.leftSplit) || isInSplit(ws.rightSplit);
+}
+
+/**
+ * If the active leaf is in a sidebar, switch to a main workspace leaf.
+ * This ensures files open in the main editor area instead of sidebars.
+ */
+export function ensureMainWorkspaceLeaf(app: App): void {
+    const { activeLeaf } = app.workspace;
+    if (!activeLeaf) return;
+
+    if (isLeafInSidebarSplit(app, activeLeaf)) {
+        const leaves = getAllLeaves(app);
+        const mainLeaf = leaves.find((leaf) => !isLeafInSidebarSplit(app, leaf)) || null;
+        if (mainLeaf) {
+            app.workspace.setActiveLeaf(mainLeaf, false);
+        }
+    }
+}
+
 export function openFileWithEventKeys(
     app: App,
     settings: BetterCommandPalettePluginSettings,
     file: TFile,
     event: MouseEvent | KeyboardEvent,
 ) {
-    // const { workspace } = app;
-
-    // let leaf = app.workspace.getMostRecentLeaf();
+    // If active leaf is in a sidebar, switch to main workspace before opening
+    ensureMainWorkspaceLeaf(app);
 
     const createNewTab = settings.createNewPaneMod === 'Shift' ? event.shiftKey : event.metaKey;
 

@@ -1,5 +1,6 @@
 import { Instruction, TFile } from 'obsidian';
 import {
+    ensureMainWorkspaceLeaf,
     generateHotKeyText,
     PaletteMatch,
     SuggestModalAdapter,
@@ -169,6 +170,9 @@ export default class BetterCommandPaletteNoteSearchAdapter extends SuggestModalA
         if (createNewTab) {
             (this.app as any).commands.executeCommandById('workspace:new-tab');
         }
+
+        // Switch away from sidebar before opening
+        ensureMainWorkspaceLeaf(this.app);
 
         const openState = targetLine !== undefined ? { eState: { line: targetLine } } : {};
         this.app.workspace.activeLeaf.openFile(file, openState);
