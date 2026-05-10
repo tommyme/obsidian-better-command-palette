@@ -369,9 +369,13 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
 
         const matches = results.map((r : Match) => new PaletteMatch(r.id, r.text, r.tags));
 
-        // Sort the suggestions so that previously searched items are first
+        // Sort by usage count (descending), falling back to recency (in prevItems) for zeros
         const prevItems = this.currentAdapter.getPrevItems();
-        matches.sort((a, b) => (+prevItems.has(b)) - (+prevItems.has(a)));
+        matches.sort((a, b) => {
+            const countDiff = this.plugin.getUsageCount(b.id) - this.plugin.getUsageCount(a.id);
+            if (countDiff !== 0) return countDiff;
+            return (+prevItems.has(b)) - (+prevItems.has(a));
+        });
 
         this.currentSuggestions = matches;
         this.limit = this.currentSuggestions.length;
@@ -472,6 +476,11 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
             this.onChooseFileCallback(item, event);
             this.close();
             return;
+        }
+        const isTag = this.actionType === ActionType.Tags;
+        if (isTag || this.actionType === ActionType.Commands) {
+            this.plugin.recordUsage(item, isTag);
+            this.plugin.saveUsageData();
         }
         this.currentAdapter.onChooseSuggestion(item, event);
     }

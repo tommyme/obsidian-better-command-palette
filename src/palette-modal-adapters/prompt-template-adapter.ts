@@ -123,12 +123,13 @@ export default class BetterCommandPalettePromptTemplateAdapter extends SuggestMo
 
     private sendToClaudeSidebar(text: string): void {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const claudeSidebar = (this.app as any).plugins?.plugins?.['claude-sidebar'];
-        if (claudeSidebar?.sendTextToTerminal) {
-            claudeSidebar.sendTextToTerminal(`${text}\n`);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const coderidian = (this.app as any).plugins?.plugins?.coderidian;
+        if (coderidian?.sendTextToTerminal) {
+            coderidian.sendTextToTerminal(text, true);
         } else {
             // eslint-disable-next-line no-new
-            new Notice('Claude Sidebar plugin not found or not active.');
+            new Notice('Coderidian plugin not found or not active.');
         }
     }
 }

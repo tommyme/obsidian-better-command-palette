@@ -38,6 +38,7 @@ export default class BetterCommandPaletteTagAdapter extends SuggestModalAdapter 
             this.palette.scope.register(['Mod'], this.plugin.settings.commandSearchHotkey, () => this.palette.changeActionType(ActionType.Commands)),
             this.palette.scope.register(['Mod'], this.plugin.settings.fileSearchHotkey, () => this.palette.changeActionType(ActionType.Files)),
             this.palette.scope.register(['Mod'], this.plugin.settings.noteSearchHotkey, () => this.palette.changeActionType(ActionType.NoteSearch)),
+            this.palette.scope.register(['Mod'], 'F', () => this.palette.changeActionType(ActionType.NoteSearch)),
         ];
     }
 

@@ -106,11 +106,16 @@ export default abstract class SuggestModalAdapter {
     getSortedItems(): Match[] {
         const allItems = new OrderedSet(this.getItems());
 
+        // Sort prevItems by usage count ascending so the most-used item gets added last
+        // and ends up first after valuesByLastAdd() reversal.
+        const prevByCount = this.getPrevItems().values()
+            .sort((a, b) => this.plugin.getUsageCount(a.id) - this.plugin.getUsageCount(b.id));
+
         // TODO: Clean up this logic. If we ever have more than two things this will not work.
         const firstItems = this.recentAbovePinned
-            ? this.getPrevItems().values() : this.getPinnedItems();
+            ? prevByCount : this.getPinnedItems();
         const secondItems = !this.recentAbovePinned
-            ? this.getPrevItems().values() : this.getPinnedItems();
+            ? prevByCount : this.getPinnedItems();
 
         const itemsToAdd = [secondItems, firstItems];
 

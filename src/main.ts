@@ -1,13 +1,22 @@
 import { Plugin } from 'obsidian';
 
 import SuggestionsWorker from 'web-worker:./web-workers/suggestions-worker';
-import { OrderedSet, MacroCommand } from 'src/utils';
+import { OrderedSet, MacroCommand, PaletteMatch } from 'src/utils';
 import BetterCommandPaletteModal from 'src/palette';
 import { Match, UnsafeAppInterface } from 'src/types/types';
 import { BetterCommandPalettePluginSettings, BetterCommandPaletteSettingTab, DEFAULT_SETTINGS } from 'src/settings';
 import { MACRO_COMMAND_ID_PREFIX } from './utils/constants';
 import FloatingHelpPanel from './utils/floating-help-panel';
 import './styles.scss';
+
+const USAGE_DATA_PATH = '.obsidian/better-command-palette-usage.json';
+const MAX_PERSISTED_ITEMS = 100;
+
+interface UsageData {
+    commands: Array<{ id: string; text: string; tags: string[] }>;
+    tags: Array<{ id: string; text: string; tags: string[] }>;
+    counts: Record<string, number>;
+}
 
 export default class BetterCommandPalettePlugin extends Plugin {
     app: UnsafeAppInterface;
@@ -17,6 +26,8 @@ export default class BetterCommandPalettePlugin extends Plugin {
     prevCommands: OrderedSet<Match>;
 
     prevTags: OrderedSet<Match>;
+
+    usageCounts: Map<string, number>;
 
     suggestionsWorker: Worker;
 
@@ -28,6 +39,9 @@ export default class BetterCommandPalettePlugin extends Plugin {
 
         this.prevCommands = new OrderedSet<Match>();
         this.prevTags = new OrderedSet<Match>();
+        this.usageCounts = new Map<string, number>();
+        await this.loadUsageData();
+
         this.suggestionsWorker = new SuggestionsWorker({});
 
         this.addCommand({
@@ -110,6 +124,60 @@ export default class BetterCommandPalettePlugin extends Plugin {
 
     onunload(): void {
         this.suggestionsWorker.terminate();
+    }
+
+    private async loadUsageData(): Promise<void> {
+        try {
+            const raw = await this.app.vault.adapter.read(USAGE_DATA_PATH);
+            const data: UsageData = JSON.parse(raw);
+
+            (data.commands || []).forEach((item) => {
+                this.prevCommands.add(new PaletteMatch(item.id, item.text, item.tags || []));
+            });
+            (data.tags || []).forEach((item) => {
+                this.prevTags.add(new PaletteMatch(item.id, item.text, item.tags || []));
+            });
+            Object.entries(data.counts || {}).forEach(([id, count]) => {
+                this.usageCounts.set(id, count as number);
+            });
+        } catch (e) {
+            // File doesn't exist yet on first run — start fresh
+        }
+    }
+
+    async saveUsageData(): Promise<void> {
+        try {
+            const data: UsageData = {
+                commands: this.prevCommands.values()
+                    .slice(-MAX_PERSISTED_ITEMS)
+                    .map((m) => ({ id: m.id, text: m.text, tags: m.tags })),
+                tags: this.prevTags.values()
+                    .slice(-MAX_PERSISTED_ITEMS)
+                    .map((m) => ({ id: m.id, text: m.text, tags: m.tags })),
+                counts: Object.fromEntries(
+                    Array.from(this.usageCounts.entries())
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, MAX_PERSISTED_ITEMS),
+                ),
+            };
+            await this.app.vault.adapter.write(USAGE_DATA_PATH, JSON.stringify(data));
+        } catch (e) {
+            // eslint-disable-next-line no-console
+            console.error('[BCP] saveUsageData: FAILED to save', e);
+        }
+    }
+
+    recordUsage(match: Match, isTag: boolean): void {
+        if (isTag) {
+            this.prevTags.add(match);
+        } else {
+            this.prevCommands.add(match);
+        }
+        this.usageCounts.set(match.id, (this.usageCounts.get(match.id) || 0) + 1);
+    }
+
+    getUsageCount(id: string): number {
+        return this.usageCounts.get(id) || 0;
     }
 
     loadMacroCommands() {
