@@ -14,13 +14,6 @@ interface CoderidianPlugin {
     fetchLarkDocs(): Promise<LarkDoc[]>;
 }
 
-interface LarkCache {
-    timestamp: number;
-    docs: LarkDoc[];
-}
-
-const LARK_CACHE_PATH = '.obsidian/better-command-palette-lark-cache.json';
-
 export default class BetterCommandPaletteLarkAdapter extends SuggestModalAdapter {
     titleText = 'Better Command Palette: Feishu Docs';
 
@@ -49,21 +42,9 @@ export default class BetterCommandPaletteLarkAdapter extends SuggestModalAdapter
         }
 
         try {
-            const cache = await this.readCache();
-            const expiryMs = (this.plugin.settings.larkCacheExpiryHours ?? 24) * 3_600_000;
-
-            if (cache && Date.now() - cache.timestamp < expiryMs) {
-                this.allItems = cache.docs.map((d) => new PaletteMatch(d.url, d.title));
-                this.emptyStateText = 'No matching Feishu documents.';
-                this.palette.lastQuery = '\0';
-                this.palette.updateSuggestions();
-                return;
-            }
-
             const docs = await coderidian.fetchLarkDocs();
             this.allItems = docs.map((d) => new PaletteMatch(d.url, d.title));
             this.emptyStateText = 'No matching Feishu documents.';
-            await this.writeCache({ timestamp: Date.now(), docs });
             this.palette.lastQuery = '\0';
             this.palette.updateSuggestions();
         } catch (e) {
@@ -72,24 +53,6 @@ export default class BetterCommandPaletteLarkAdapter extends SuggestModalAdapter
             new Notice(`[BCP Lark] ${(e as Error).message}`);
             this.palette.lastQuery = '\0';
             this.palette.updateSuggestions();
-        }
-    }
-
-    private async readCache(): Promise<LarkCache | null> {
-        try {
-            const raw = await this.app.vault.adapter.read(LARK_CACHE_PATH);
-            return JSON.parse(raw) as LarkCache;
-        } catch {
-            return null;
-        }
-    }
-
-    private async writeCache(cache: LarkCache): Promise<void> {
-        try {
-            await this.app.vault.adapter.write(LARK_CACHE_PATH, JSON.stringify(cache));
-        } catch (e) {
-            // eslint-disable-next-line no-console
-            console.warn('[BCP Lark] Failed to write cache:', e);
         }
     }
 

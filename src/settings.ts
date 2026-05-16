@@ -32,7 +32,6 @@ export interface BetterCommandPalettePluginSettings {
     promptTemplateSearchHotkey: string,
     hiddenPromptTemplates: string[],
     larkSearchPrefix: string,
-    larkCacheExpiryHours: number,
     hiddenLarkDocs: string[],
 }
 
@@ -63,7 +62,6 @@ export const DEFAULT_SETTINGS: BetterCommandPalettePluginSettings = {
     promptTemplateSearchHotkey: 'u',
     hiddenPromptTemplates: [],
     larkSearchPrefix: '@lark',
-    larkCacheExpiryHours: 24,
     hiddenLarkDocs: [],
 };
 
@@ -269,18 +267,6 @@ export class BetterCommandPaletteSettingTab extends PluginSettingTab {
                 .setValue(settings.larkSearchPrefix)
                 .onChange(async (val) => {
                     settings.larkSearchPrefix = val.trim() || '@lark';
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName('Lark Cache Expiry (hours)')
-            .setDesc('How many hours to keep the cached Feishu document list before re-fetching.')
-            .addText((t) => t
-                .setPlaceholder('24')
-                .setValue(String(settings.larkCacheExpiryHours))
-                .onChange(async (val) => {
-                    const n = parseInt(val, 10);
-                    settings.larkCacheExpiryHours = Number.isFinite(n) && n > 0 ? n : 24;
                     await this.plugin.saveSettings();
                 }));
 
