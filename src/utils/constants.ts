@@ -40,4 +40,7 @@ export enum ActionType {
     Tags,
     NoteSearch,
     PromptTemplates,
+    Lark,
 }
+
+export const LARK_GATEWAY_ID = '__lark_gateway__';

@@ -10,7 +10,7 @@ import {
     createPaletteMatchesFromFilePath,
 } from 'src/utils';
 import { Match, UnsafeAppInterface } from 'src/types/types';
-import { ActionType } from 'src/utils/constants';
+import { ActionType, LARK_GATEWAY_ID } from 'src/utils/constants';
 
 export default class BetterCommandPaletteFileAdapter extends SuggestModalAdapter {
     titleText: string;
@@ -60,6 +60,9 @@ export default class BetterCommandPaletteFileAdapter extends SuggestModalAdapter
 
         // Add the deduped links to all items
         this.allItems = this.allItems.concat(Array.from(this.unresolvedItems.values())).reverse();
+
+        // Gateway item to enter Feishu/Lark document search mode
+        this.allItems.push(new PaletteMatch(LARK_GATEWAY_ID, '@lark', ['Open Feishu Docs']));
 
         // Use obsidian's last open files as the previous items
         [...this.app.workspace.getLastOpenFiles()].reverse().forEach((filePath) => {
@@ -135,7 +138,7 @@ export default class BetterCommandPaletteFileAdapter extends SuggestModalAdapter
         let path = match && match.id;
 
         // No match means we are trying to create new file
-        if (!match) {
+        if (!match || match.id === LARK_GATEWAY_ID) {
             // get Input element.
             const el = event.target as HTMLInputElement;
             path = el.value.replace(this.fileSearchPrefix, '');

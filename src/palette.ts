@@ -10,9 +10,11 @@ import {
     BetterCommandPaletteTagAdapter,
     BetterCommandPaletteNoteSearchAdapter,
     BetterCommandPalettePromptTemplateAdapter,
+    BetterCommandPaletteLarkAdapter,
 } from 'src/palette-modal-adapters';
 import BetterCommandPalettePlugin from 'src/main';
-import { ActionType } from './utils/constants';
+import { ActionType, LARK_GATEWAY_ID } from './utils/constants';
+import LARK_ICON_SVG from './assets/lark-icon';
 
 class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSuggestModalInterface {
     // Unsafe interface
@@ -52,6 +54,8 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
 
     promptTemplateAdapter: BetterCommandPalettePromptTemplateAdapter;
 
+    larkAdapter: BetterCommandPaletteLarkAdapter;
+
     currentAdapter: SuggestModalAdapter;
 
     noteSearchPrefix: string;
@@ -61,6 +65,12 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
     suggestionLimit: number;
 
     adapterVersion: number;
+
+    // When set, updateActionType uses this type regardless of input prefix.
+    // Used by Lark mode (entered via gateway) so no text prefix appears in the input.
+    forcedActionType: ActionType | null = null;
+
+    private larkBadgeEl: HTMLElement | null = null;
 
     onChooseFileCallback: ((item: Match, evt: MouseEvent | KeyboardEvent) => void) | null = null;
 
@@ -119,6 +129,12 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
             this,
         );
         this.promptTemplateAdapter = new BetterCommandPalettePromptTemplateAdapter(
+            app,
+            new OrderedSet<Match>(),
+            plugin,
+            this,
+        );
+        this.larkAdapter = new BetterCommandPaletteLarkAdapter(
             app,
             new OrderedSet<Match>(),
             plugin,
@@ -183,6 +199,16 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
 
         // 注册键盘事件
         this.scope.register([], 'Backspace', (event: KeyboardEvent) => {
+            const el = event.target as HTMLInputElement;
+            // In forced Lark mode, backspace on empty input → back to Commands
+            if (this.forcedActionType === ActionType.Lark && el.value === '') {
+                this.forcedActionType = null;
+                this.hideLarkBadge();
+                this.lastQuery = '\0';
+                this.updateSuggestions();
+                event.preventDefault();
+                return;
+            }
             closeModal(event);
         });
 
@@ -243,7 +269,21 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
         }
     }
 
-    changeActionType(actionType:ActionType) {
+    changeActionType(actionType: ActionType) {
+        // Lark uses forced-mode: no text prefix in input, badge icon instead
+        if (actionType === ActionType.Lark) {
+            this.forcedActionType = ActionType.Lark;
+            const cleanQuery = this.currentAdapter.cleanQuery(this.inputEl.value);
+            this.inputEl.value = cleanQuery;
+            this.lastQuery = '\0';
+            this.updateSuggestions();
+            return;
+        }
+
+        // Switching to any other mode clears forced state
+        this.forcedActionType = null;
+        this.hideLarkBadge();
+
         let prefix = '';
         if (actionType === ActionType.Files) {
             prefix = this.plugin.settings.fileSearchPrefix;
@@ -274,12 +314,28 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
         this.updateSuggestions();
     }
 
-    updateActionType() : boolean {
-        const text: string = this.inputEl.value;
-        let nextAdapter;
-        let type;
+    private showLarkBadge(): void {
+        if (this.larkBadgeEl || !this.inputEl?.parentElement) return;
+        this.larkBadgeEl = createEl('span', { cls: 'bcp-lark-badge' });
+        this.larkBadgeEl.innerHTML = LARK_ICON_SVG;
+        this.inputEl.parentElement.insertBefore(this.larkBadgeEl, this.inputEl);
+    }
 
-        if (text.startsWith(this.fileSearchPrefix)) {
+    private hideLarkBadge(): void {
+        this.larkBadgeEl?.remove();
+        this.larkBadgeEl = null;
+    }
+
+    updateActionType(): boolean {
+        const text: string = this.inputEl.value;
+        let nextAdapter: SuggestModalAdapter;
+        let type: ActionType;
+
+        if (this.forcedActionType !== null) {
+            // Mode locked via gateway (e.g. Lark) — ignore input prefix
+            type = this.forcedActionType;
+            nextAdapter = this.getAdapterForType(type);
+        } else if (text.startsWith(this.fileSearchPrefix)) {
             type = ActionType.Files;
             nextAdapter = this.fileAdapter;
         } else if (text.startsWith(this.tagSearchPrefix)) {
@@ -311,6 +367,12 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
         this.actionType = type;
 
         if (wasUpdated) {
+            // Show Feishu badge when entering Lark mode, hide when leaving
+            if (type === ActionType.Lark) {
+                this.showLarkBadge();
+            } else {
+                this.hideLarkBadge();
+            }
             this.updateEmptyStateText();
             this.updateTitleText();
             this.updateInstructions();
@@ -320,6 +382,17 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
         }
 
         return wasUpdated;
+    }
+
+    private getAdapterForType(type: ActionType): SuggestModalAdapter {
+        switch (type) {
+            case ActionType.Files: return this.fileAdapter;
+            case ActionType.Tags: return this.tagAdapter;
+            case ActionType.NoteSearch: return this.noteAdapter;
+            case ActionType.PromptTemplates: return this.promptTemplateAdapter;
+            case ActionType.Lark: return this.larkAdapter;
+            default: return this.commandAdapter;
+        }
     }
 
     updateTitleText() {
@@ -441,37 +514,56 @@ class BetterCommandPaletteModal extends SuggestModal<Match> implements UnsafeSug
     renderSuggestion(match: Match, el: HTMLElement) {
         el.addClass('mod-complex');
 
-        const isHidden = this.currentAdapter.hiddenIds.includes(match.id);
+        const isGateway = match.id === LARK_GATEWAY_ID;
+        const isHidden = !isGateway && this.currentAdapter.hiddenIds.includes(match.id);
 
         if (isHidden) {
             el.addClass('hidden');
         }
 
-        const icon = 'cross';
-
         const suggestionContent = el.createEl('span', 'suggestion-content');
         const suggestionAux = el.createEl('span', 'suggestion-aux');
 
-        const flairContainer = suggestionAux.createEl('span', 'suggestion-flair');
         renderPrevItems(match, suggestionContent, this.currentAdapter.getPrevItems());
 
-        setIcon(flairContainer, icon, 13);
-        flairContainer.ariaLabel = isHidden ? 'Click to Unhide' : 'Click to Hide';
-        flairContainer.setAttr('data-id', match.id);
+        if (!isGateway) {
+            const icon = 'cross';
+            const flairContainer = suggestionAux.createEl('span', 'suggestion-flair');
+            setIcon(flairContainer, icon, 13);
+            flairContainer.ariaLabel = isHidden ? 'Click to Unhide' : 'Click to Hide';
+            flairContainer.setAttr('data-id', match.id);
 
-        flairContainer.onClickEvent((event) => {
-            event.preventDefault();
-            event.stopPropagation();
+            flairContainer.onClickEvent((event) => {
+                event.preventDefault();
+                event.stopPropagation();
 
-            const hideEl = event.target as HTMLElement;
+                const hideEl = event.target as HTMLElement;
 
-            this.currentAdapter.toggleHideId(hideEl.getAttr('data-id'));
-        });
+                this.currentAdapter.toggleHideId(hideEl.getAttr('data-id'));
+            });
+        }
 
         this.currentAdapter.renderSuggestion(match, suggestionContent, suggestionAux);
     }
 
     async onChooseSuggestion(item: Match, event: MouseEvent | KeyboardEvent) {
+        // Gateway item: close this modal and reopen in forced Lark mode (no text prefix)
+        if (item && item.id === LARK_GATEWAY_ID) {
+            const { plugin, suggestionsWorker } = this;
+            setTimeout(() => {
+                const modal = new BetterCommandPaletteModal(
+                    plugin.app,
+                    plugin.prevCommands,
+                    plugin.prevTags,
+                    plugin,
+                    suggestionsWorker,
+                );
+                modal.forcedActionType = ActionType.Lark;
+                modal.open();
+            }, 0);
+            return;
+        }
+
         if (this.onChooseFileCallback && this.actionType === ActionType.Files) {
             this.onChooseFileCallback(item, event);
             this.close();
